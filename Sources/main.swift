@@ -43,6 +43,8 @@ loop: repeat {
     // read command
     let cmd = read_cmd()
 
+    print(test)
+
     switch cmd {
     case "":
         continue

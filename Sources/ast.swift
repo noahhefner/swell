@@ -11,14 +11,16 @@ Implementation Goals:
 
 */
 
+typealias Token = String
+
 struct Command {
     var simpleCommand: SimpleCommand
     var pipelineCommand: PipelineCommand
 }
 
 struct SimpleCommand {
-    var program: String
-    var args: [String]?
+    var program: Token
+    var args: [Token]?
 }
 
 struct PipelineCommand {
