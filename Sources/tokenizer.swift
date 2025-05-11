@@ -6,31 +6,36 @@ given a string, return a list of tokens
 
 */
 
+import Foundation
+
 let SpecialCharacters: [Character] = ["|"]
 
 func Tokenize(cmd: String) -> [Token]? {
-    
-    // empty string
-    if (cmd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+   
+    // trim leading and trailing whitespace off of the command
+    let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // command is empty
+    if (trimmed.isEmpty) {
         return nil
     }
 
-    var tokenList: [Token]
-    var currentToken: Token? = nil
+    var tokenList: [Token] = []
+    var currentToken: Token = ""
 
     // extract tokens from command
-    for character in cmd {
+    for character in trimmed {
 
         // handle whitespace characters
         if character.isWhitespace {
 
-            if currentToken != nil {
+            if currentToken != "" {
 
                 // add current token to token list
-                tokenList.append(currentToken!)
+                tokenList.append(currentToken)
 
                 // reset current token
-                currentToken = nil
+                currentToken = ""
 
             }
 
@@ -38,23 +43,27 @@ func Tokenize(cmd: String) -> [Token]? {
         } else if SpecialCharacters.contains(character) {
 
             // add currentToken to token list
-            if (currentToken != nil) {
-                tokenList.append(currentToken!)
+            if (currentToken != "") {
+                tokenList.append(currentToken)
             }
 
             // add special character to token list
-            tokenList.append(character)
+            tokenList.append(String(character))
 
             // reset current token
-            currentToken = nil
+            currentToken = ""
 
         // handle command characters
         } else {
 
             // append character to current token
-            currentToken += character
-
+            currentToken = currentToken + String(character)
         }
+    }
+
+    // last token in the command
+    if currentToken != "" {
+        tokenList.append(currentToken)
     }
 
     return tokenList
