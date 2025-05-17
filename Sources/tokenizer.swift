@@ -4,12 +4,65 @@ Goals:
 
 given a string, return a list of tokens
 
+example commands:
+
+ls("/path/to/dir").grep(".bashrc")
+
 */
 
 import Foundation
 
-let SpecialCharacters: [Character] = ["|"]
+enum TokenType {
+    case identifier
+    case parenthesis
+    case comma
+    case dot
+    case assignmentOperator
+    case stringLiteral
+    case eof
+    case null
+    case unknown
+}
 
+class Token {
+    
+    var text: String
+    var type: TokenType    
+
+    init(text:String) {
+
+        self.text = text
+
+        switch text {
+        case "(", ")":
+            self.type = TokenType.parenthesis
+        case ",":
+            self.type = TokenType.comma
+        case ".":
+            self.type = TokenType.dot
+        case "=":
+            self.type = TokenType.assignmentOperator
+        case let s where s.hasPrefix("\"") && s.hasSuffix("\""):
+            self.type = TokenType.stringLiteral
+        case let s where Token.isValidIdentifier(text: s):
+            self.type = TokenType.identifier
+        default:
+            self.type = TokenType.unknown
+        }
+
+    }
+
+    private static func isValidIdentifier(text: String) -> Bool {
+        
+        // validate the first character
+        guard let first = text.first, first.isLetter || first == "_" else {
+            return false
+        }
+        // validate remainder of the text
+        return text.dropFirst().allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+    }
+
+}
 func Tokenize(cmd: String) -> [Token]? {
    
     // trim leading and trailing whitespace off of the command
@@ -21,49 +74,66 @@ func Tokenize(cmd: String) -> [Token]? {
     }
 
     var tokenList: [Token] = []
-    var currentToken: Token = ""
+    
+    var consumedToIndex: String.Index = trimmed.startIndex
+    
+    while consumedToIndex != trimmed.endIndex {
 
-    // extract tokens from command
-    for character in trimmed {
+        var tokenString: String = ""
 
-        // handle whitespace characters
-        if character.isWhitespace {
+        if trimmed[consumedToIndex] == "\"" {
+            // next token is a string literal
 
-            if currentToken != "" {
+            // add leading double quote to token string
+            tokenString.insert("\"", at: tokenString.startIndex)
 
-                // add current token to token list
-                tokenList.append(currentToken)
+            // increment the consumed index
+            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
+            
+            // evaluate two characters per iteration so that we can skip over
+            // escaped double qoutes
+            var end = trimmed.index(consumedToIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+            var window = trimmed[consumedToIndex..<end]
+           
+            while true {
 
-                // reset current token
-                currentToken = ""
+                if let firstChar = window.first {
+                    tokenString.insert(firstChar, at: tokenString.endIndex)
+                }
 
+                // Move window forward one character
+                consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
+                end = trimmed.index(consumedToIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+                window = trimmed[consumedToIndex..<end]
+                
+                if window != "\\\"" && window.last == "\"" {
+                    tokenString += window
+                    consumedToIndex = end
+                    break
+                }
+                
             }
 
-        // handle special characters
-        } else if SpecialCharacters.contains(character) {
+        } else if trimmed[consumedToIndex] == "|" {
+            // next token is a pipe character
 
-            // add currentToken to token list
-            if (currentToken != "") {
-                tokenList.append(currentToken)
-            }
+            // add pipe character to token string
+            tokenString.insert(trimmed[consumedToIndex], at: tokenString.endIndex)
+            // move consumed to index forward one character
+            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
+        
+        } else if trimmed[consumedToIndex].isWhitespace {
+            // ignore whitespace characters
+            
+            // move consumed to index forward one character
+            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
 
-            // add special character to token list
-            tokenList.append(String(character))
-
-            // reset current token
-            currentToken = ""
-
-        // handle command characters
-        } else {
-
-            // append character to current token
-            currentToken = currentToken + String(character)
         }
-    }
 
-    // last token in the command
-    if currentToken != "" {
-        tokenList.append(currentToken)
+        if !tokenString.isEmpty {
+            tokenList.append(Token(text: tokenString))
+        }
+
     }
 
     return tokenList

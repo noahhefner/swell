@@ -9,9 +9,10 @@ Implementation Goals:
 2) Support pipes
    ie. ls | grep term
 
-*/
 
 typealias Token = String
+
+enum Token 
 
 struct Command {
     var simpleCommand: SimpleCommand
@@ -25,4 +26,4 @@ struct SimpleCommand {
 
 struct PipelineCommand {
     var commands: [SimpleCommand]
-}
+}*/

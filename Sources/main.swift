@@ -43,6 +43,7 @@ loop: repeat {
     // read command
     let cmd = read_cmd()
 
+
     switch cmd {
     case "":
         continue
@@ -50,9 +51,12 @@ loop: repeat {
         print("Goodbye!")
         break loop
     default:
-        let tokens = Tokenize(cmd: cmd)
-        print(tokens!)
-        //exec_cmd(cmd: cmd)
+        if let tokens = Tokenize(cmd: cmd) {
+            for t in tokens {
+                print(t.text)
+            }
+        }
+       //exec_cmd(cmd: cmd)
     }
 
 } while true
