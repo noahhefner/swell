@@ -26,9 +26,15 @@ enum TokenType {
 
 class Token {
     
+    // Raw text of the token
     var text: String
+    // Enum for the type of the token
     var type: TokenType    
 
+    /// Creates a new instance of a Token object. This constructor sets
+    /// the self.type property based on the content of text.
+    ///
+    /// Paramater text: The text of the token.
     init(text:String) {
 
         self.text = text
@@ -63,7 +69,8 @@ class Token {
     }
 
 }
-func Tokenize(cmd: String) -> [Token]? {
+
+func Lexer(cmd: String) -> [Token]? {
    
     // trim leading and trailing whitespace off of the command
     let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,7 +81,8 @@ func Tokenize(cmd: String) -> [Token]? {
     }
 
     var tokenList: [Token] = []
-    
+
+    // tracks how much of the command has been evaluated
     var consumedToIndex: String.Index = trimmed.startIndex
     
     while consumedToIndex != trimmed.endIndex {
@@ -113,6 +121,15 @@ func Tokenize(cmd: String) -> [Token]? {
                 }
                 
             }
+
+        } else if trimmed[consumedToIndex] == "(" || trimmed[consumedToIndex] == ")" {
+            // next token is a parenthesis
+
+            // add parenthesis character to token string
+            tokenString.insert(trimmed[consumedToIndex], at: tokenString.endIndex)
+
+            // move consumed to index forward one character
+            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
 
         } else if trimmed[consumedToIndex] == "|" {
             // next token is a pipe character

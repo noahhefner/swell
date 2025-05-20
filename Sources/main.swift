@@ -51,7 +51,7 @@ loop: repeat {
         print("Goodbye!")
         break loop
     default:
-        if let tokens = Tokenize(cmd: cmd) {
+        if let tokens = Lexer(cmd: cmd) {
             for t in tokens {
                 print(t.text)
             }
