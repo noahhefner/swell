@@ -11,6 +11,10 @@ enum TokenType {
     case pipe
     case null
     case unknown
+    case redirectOut
+    case redirectAppend
+    case redirectErr
+    case redirectErrAppend
 }
 
 class Token {
@@ -47,6 +51,16 @@ class Token {
             self.type = TokenType.unknown
         }
 
+    }
+
+    // returns true if the token is a redirection token, false otherwise
+    func isRedirectionToken() -> Bool {
+        switch self.type {
+        case .redirectOut, .redirectAppend, .redirectErr, .redirectErrAppend:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func isValidIdentifier(text: String) -> Bool {

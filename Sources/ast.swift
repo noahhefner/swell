@@ -28,13 +28,13 @@ struct Command {
 
 // pipeline ::= redirection_command { "|" redirection_command }
 struct Pipeline {
-    var commandsWithRedirections: [commandWithRedirections] 
+    var commandsWithRedirections: [CommandWithRedirections] 
 }
 
 // redirection_command ::= simple_command { redirection }
 struct CommandWithRedirections {
     var simpleCommand: SimpleCommand
-    var redirections: [Redirections]
+    var redirections: [Redirection]
 }
 
 struct Redirection {

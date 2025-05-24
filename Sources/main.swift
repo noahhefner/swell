@@ -13,28 +13,6 @@ func prompt() {
     print("# ", terminator: "")
 }
 
-func exec_cmd(cmd: String) {
-
-    let parts = cmd.split(separator: " ").map { String($0) }
-    let args: [UnsafeMutablePointer<CChar>?] = parts.map { strdup($0) } + [nil]
-
-    let pid = fork()
-
-    switch pid {
-    case 0:
-        execvp(args[0]!, args)
-        perror("execvp")
-        exit(1)
-    case let x where x > 0:
-        // Parent process
-        var status: Int32 = 0
-        waitpid(pid, &status, 0)
-        print("Child exited with status \(status)")
-    default:
-        perror("Fork failure!")
-    }
-}
-
 loop: repeat {
 
     // print prompt
@@ -55,8 +33,10 @@ loop: repeat {
             for t in tokens {
                 print(t.text)
             }
+            if let parsed = try Parse(tokens: tokens) {
+                print(parsed)
+            }
         }
-       //exec_cmd(cmd: cmd)
     }
 
 } while true
