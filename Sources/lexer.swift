@@ -1,15 +1,3 @@
-/*
-
-Goals:
-
-given a string, return a list of tokens
-
-example commands:
-
-ls("/path/to/dir").grep(".bashrc")
-
-*/
-
 import Foundation
 
 enum TokenType {
@@ -20,6 +8,7 @@ enum TokenType {
     case assignmentOperator
     case stringLiteral
     case eof
+    case pipe
     case null
     case unknown
 }
@@ -46,6 +35,8 @@ class Token {
             self.type = TokenType.comma
         case ".":
             self.type = TokenType.dot
+        case "|":
+            self.type = TokenType.pipe
         case "=":
             self.type = TokenType.assignmentOperator
         case let s where s.hasPrefix("\"") && s.hasSuffix("\""):
@@ -145,6 +136,20 @@ func Lexer(cmd: String) -> [Token]? {
             // move consumed to index forward one character
             consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
 
+        } else {
+            // next token is an identifier
+
+            while consumedToIndex != trimmed.endIndex {
+                let char = trimmed[consumedToIndex]
+
+                // Break on delimiters (whitespace or known punctuation)
+                if char.isWhitespace || "()|=,.\"".contains(char) {
+                    break
+                }
+
+                tokenString.append(char)
+                consumedToIndex = trimmed.index(after: consumedToIndex)
+            }            
         }
 
         if !tokenString.isEmpty {

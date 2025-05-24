@@ -1,29 +1,53 @@
 // Abstract Syntax Tree for Swell shell
 
-/* 
-Implementation Goals:
+/*
 
-1) Support commands with arguments
-   ie. ls -al
+Grammar rules:
 
-2) Support pipes
-   ie. ls | grep term
+command ::= pipeline ;
 
+pipeline ::= redirection_command { "|" redirection_command }
 
-typealias Token = String
+redirection_command ::= simple_command { redirection }
 
-enum Token 
+simple_command ::= WORD { WORD } ;
 
+redirection ::= output_redirect | error_redirect ;
+
+output_redirect ::= ( ">" | ">>" ) WORD;
+
+error_redirect ::= ( "2>" | "2>>" ) WORD ;
+
+WORD ::= ? any sequence of non special characters ? ;
+*/
+
+// command ::= pipeline ;
 struct Command {
+    var pipeline: Pipeline
+}
+
+// pipeline ::= redirection_command { "|" redirection_command }
+struct Pipeline {
+    var commandsWithRedirections: [commandWithRedirections] 
+}
+
+// redirection_command ::= simple_command { redirection }
+struct CommandWithRedirections {
     var simpleCommand: SimpleCommand
-    var pipelineCommand: PipelineCommand
+    var redirections: [Redirections]
 }
 
+struct Redirection {
+    // 1 for stdout, 2 for stderr
+    var fileDescriptor: Int
+    // true if ">>" or "2>>"
+    var append: Bool
+    // file to redirect to
+    var filename: String
+}
+
+// simple_command ::= WORD { WORD } ;
 struct SimpleCommand {
-    var program: Token
-    var args: [Token]?
+    var command: String
+    var args: [String]
 }
-
-struct PipelineCommand {
-    var commands: [SimpleCommand]
-}*/
