@@ -1,7 +1,6 @@
 import Foundation
 
 enum TokenType {
-    case identifier
     case parenthesis
     case comma
     case dot
@@ -15,6 +14,7 @@ enum TokenType {
     case redirectAppend
     case redirectErr
     case redirectErrAppend
+    case word
 }
 
 class Token {
@@ -45,10 +45,8 @@ class Token {
             self.type = TokenType.assignmentOperator
         case let s where s.hasPrefix("\"") && s.hasSuffix("\""):
             self.type = TokenType.stringLiteral
-        case let s where Token.isValidIdentifier(text: s):
-            self.type = TokenType.identifier
         default:
-            self.type = TokenType.unknown
+            self.type = TokenType.word
         }
 
     }
@@ -62,17 +60,7 @@ class Token {
             return false
         }
     }
-
-    private static func isValidIdentifier(text: String) -> Bool {
-        
-        // validate the first character
-        guard let first = text.first, first.isLetter || first == "_" else {
-            return false
-        }
-        // validate remainder of the text
-        return text.dropFirst().allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
-    }
-
+    
 }
 
 func Lexer(cmd: String) -> [Token]? {
@@ -151,7 +139,7 @@ func Lexer(cmd: String) -> [Token]? {
             consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
 
         } else {
-            // next token is an identifier
+            // next token is a word
 
             while consumedToIndex != trimmed.endIndex {
                 let char = trimmed[consumedToIndex]

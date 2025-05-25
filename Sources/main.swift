@@ -30,11 +30,12 @@ loop: repeat {
         break loop
     default:
         if let tokens = Lexer(cmd: cmd) {
-            for t in tokens {
-                print(t.text)
+            for token in tokens {
+                print(token.type)
             }
-            if let parsed = try Parse(tokens: tokens) {
-                print(parsed)
+            if let parsedCommand = try Parse(tokens: tokens) {
+                let executor = Executor()
+                try executor.execute(command: parsedCommand)
             }
         }
     }

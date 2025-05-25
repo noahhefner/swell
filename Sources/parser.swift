@@ -25,41 +25,53 @@ enum ParserError: Error {
 }
 
 func Parse(tokens: [Token]) throws -> Command? {
-    
+   
+    // do not parse empty token list
+    guard !tokens.isEmpty else {
+        return nil
+    }
+
+    // to track which token the parser is currently evaluating
     var current: Int = 0
+    var currentToken: Token? {
+        return current < tokens.count ? tokens[current] : nil
+    }
 
     // step to next token
     func advance () {
-        if current < (tokens.count - 1) {
+        if current < tokens.count {
             current += 1
         }
     }
 
     // returns next token in the list
     func peek () -> Token? {
-        if current < (tokens.count - 1) {
-            return tokens[current]
-        }
-        return nil
+        return current < (tokens.count - 2) ? tokens[current + 1] : nil
     }
 
     // determines if the current token is a given type 
-    func match(_ tokenType: TokenType) -> Bool {
-        return tokens[current].type == tokenType
+    func match(_ tokenType: TokenType) throws -> Bool {
+        guard let token = currentToken else {
+            throw ParserError.runtimeError("Unexpected nil token in match().")
+        }
+        return token.type == tokenType
     }
 
+    // NON-TERMINAL: Parse a command.
     func ParseCommand () throws -> Command {
         let pipeline:Pipeline = try ParsePipeline()
         return Command(pipeline: pipeline)
     }
 
+    // NON-TERMINAL: Parse a pipeline.
     func ParsePipeline () throws -> Pipeline {
         var commands: [CommandWithRedirections] = []
     
         let firstCommand = try ParseRedirectionCommand()
         commands.append(firstCommand)
     
-        while match(TokenType.pipe) {
+        while let token = currentToken, token.type == TokenType.pipe {
+            print("Spinning in ParsePipeline")
             advance()
             let nextCommand = try ParseRedirectionCommand()
             commands.append(nextCommand)
@@ -68,11 +80,13 @@ func Parse(tokens: [Token]) throws -> Command? {
         return Pipeline(commandsWithRedirections: commands) 
     }
 
+    // NON-TERMINAL: Parse a redirection command.
     func ParseRedirectionCommand () throws -> CommandWithRedirections {
         let simple = try ParseSimpleCommand()
         var redirs: [Redirection] = []
     
-        while tokens[current].isRedirectionToken() {
+        while let token = currentToken, token.isRedirectionToken() {
+            print("Spinning in ParseRedirectionCommand")
             let redir = try ParseRedirection()
             redirs.append(redir)
         }
@@ -83,32 +97,38 @@ func Parse(tokens: [Token]) throws -> Command? {
     // parse a simple command
     func ParseSimpleCommand() throws -> SimpleCommand {
        
-        // current token is not an identifier
-        guard TokenType.identifier == tokens[current].type else {
+        // current token is not a word token
+        guard let token = currentToken, token.type == TokenType.word else {
             throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
         }
 
-        let name = tokens[current].text
-    
-        var args: [String] = []
-        advance() // consume command name
-
+        // consume command name
+        let commandName = token.text
+        advance()
+        
         // match the command args
-        while TokenType.identifier == tokens[current].type {
+        var args: [String] = []
+        while let token = currentToken, token.type == TokenType.word {
+            print("Spinning in ParseSimpleCommand")
             args.append(tokens[current].text)
             advance()
         }
     
-        return SimpleCommand(command: name, args: args)
+        return SimpleCommand(command: commandName, args: args)
     }
 
     // parse a redirection
     func ParseRedirection() throws -> Redirection {
+        
+        guard let token = currentToken else {
+            throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
+        }
+
         let fd: Int
         let append: Bool
         
         // determine what kind of redirection it is
-        switch tokens[current].type {
+        switch token.type {
         case .redirectOut:
             fd = 1
             append = false
@@ -125,23 +145,16 @@ func Parse(tokens: [Token]) throws -> Command? {
             throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
         }
     
-        advance() // consume redirection token
+        advance()  // consume redirection token
    
-        guard TokenType.identifier == tokens[current].type else {
+        guard let token = currentToken, token.type == TokenType.word else {
             throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
         }
-        let filename = tokens[current].text
+        let filename = token.text
 
-        advance()
+        advance()  // consume filename
     
         return Redirection(fileDescriptor: fd, append: append, filename: filename)
-    }
-
-    func ParseIdentifier() -> Bool {
-        if TokenType.identifier == tokens[current].type {
-            return true
-        }
-        return false
     }
     
     // parse the command
