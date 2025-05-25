@@ -1,24 +1,4 @@
-/*
-
-Grammar rules:
-
-command ::= pipeline ;
-
-pipeline ::= redirection_command { "|" redirection_command }
-
-redirection_command ::= simple_command { redirection }
-
-simple_command ::= WORD { WORD } ;
-
-redirection ::= output_redirect | error_redirect ;
-
-output_redirect ::= ( ">" | ">>" ) WORD;
-
-error_redirect ::= ( "2>" | "2>>" ) WORD ;
-
-WORD ::= ? any sequence of non special characters ? ;
-
-*/
+import Foundation
 
 enum ParserError: Error {
     case runtimeError(String)
@@ -106,11 +86,12 @@ func Parse(tokens: [Token]) throws -> Command? {
         let commandName = token.text
         advance()
         
-        // match the command args
+        // match the command args. args can be either words or string literals
         var args: [String] = []
-        while let token = currentToken, token.type == TokenType.word {
+        while let token = currentToken, token.type == TokenType.word || token.type == TokenType.stringLiteral {
             print("Spinning in ParseSimpleCommand")
-            args.append(tokens[current].text)
+            let arg = parseArgument(token)
+            args.append(arg)
             advance()
         }
     
@@ -121,7 +102,7 @@ func Parse(tokens: [Token]) throws -> Command? {
     func ParseRedirection() throws -> Redirection {
         
         guard let token = currentToken else {
-            throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
+            throw ParserError.runtimeError("Can't find token in ParseRedirection")
         }
 
         let fd: Int
@@ -142,19 +123,28 @@ func Parse(tokens: [Token]) throws -> Command? {
             fd = 2
             append = true
         default:
-            throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
+            throw ParserError.runtimeError("Unexpected token: \(token.text)")
         }
     
         advance()  // consume redirection token
    
         guard let token = currentToken, token.type == TokenType.word else {
-            throw ParserError.runtimeError("Unexpected token: \(tokens[current].text)")
+            throw ParserError.runtimeError("Unexpected token: \(token.text)")
         }
         let filename = token.text
 
         advance()  // consume filename
     
         return Redirection(fileDescriptor: fd, append: append, filename: filename)
+    }
+
+    func parseArgument(_ token: Token) -> String {
+        switch token.type {
+        case .stringLiteral:
+            return token.text.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        default:
+            return token.text
+        }
     }
     
     // parse the command

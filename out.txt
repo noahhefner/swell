@@ -1,0 +1,5 @@
+LICENSE
+out.txt
+Package.swift
+README.md
+Sources

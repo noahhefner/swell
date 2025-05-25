@@ -1,20 +1,17 @@
 import Foundation
 
 enum TokenType {
-    case parenthesis
-    case comma
-    case dot
-    case assignmentOperator
     case stringLiteral
-    case eof
     case pipe
-    case null
-    case unknown
     case redirectOut
     case redirectAppend
     case redirectErr
     case redirectErrAppend
     case word
+}
+
+enum LexerError: Error {
+    case runtimeError(String)
 }
 
 class Token {
@@ -33,16 +30,16 @@ class Token {
         self.text = text
 
         switch text {
-        case "(", ")":
-            self.type = TokenType.parenthesis
-        case ",":
-            self.type = TokenType.comma
-        case ".":
-            self.type = TokenType.dot
         case "|":
             self.type = TokenType.pipe
-        case "=":
-            self.type = TokenType.assignmentOperator
+        case ">":
+            self.type = TokenType.redirectOut
+        case ">>":
+            self.type = TokenType.redirectAppend
+        case "2>":
+            self.type = TokenType.redirectErr
+        case "2>>":
+            self.type = TokenType.redirectErrAppend
         case let s where s.hasPrefix("\"") && s.hasSuffix("\""):
             self.type = TokenType.stringLiteral
         default:
@@ -63,38 +60,63 @@ class Token {
     
 }
 
-func Lexer(cmd: String) -> [Token]? {
+func Lexer(cmd: String) throws -> [Token]? {
    
-    // trim leading and trailing whitespace off of the command
     let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    guard !trimmed.isEmpty else {
+        return nil
+    }
 
-    // command is empty
-    if (trimmed.isEmpty) {
+    // Index of current character
+    var currentIndex = trimmed.startIndex
+
+    // Computed property: Current character
+    var currentChar: Character? {
+        return currentIndex < trimmed.endIndex ? trimmed[currentIndex] : nil
+    }
+
+    // move forward one character
+    func advance() {
+        if currentIndex != trimmed.endIndex {
+            currentIndex = trimmed.index(currentIndex, offsetBy: 1)
+        }
+    }
+
+    // look at the next character
+    func peek() -> Character? {
+        let nextIndex = trimmed.index(currentIndex, offsetBy: 1)
+        if nextIndex != trimmed.endIndex {
+            return trimmed[nextIndex]
+        }
         return nil
     }
 
     var tokenList: [Token] = []
 
-    // tracks how much of the command has been evaluated
-    var consumedToIndex: String.Index = trimmed.startIndex
-    
-    while consumedToIndex != trimmed.endIndex {
+    while currentIndex != trimmed.endIndex {
+
+        //print("Spiinning in lexer")
 
         var tokenString: String = ""
 
-        if trimmed[consumedToIndex] == "\"" {
+        guard let char = currentChar else {
+            throw LexerError.runtimeError("Can't find current character in lexer.")
+        }
+
+        if char == "\"" {
             // next token is a string literal
 
             // add leading double quote to token string
-            tokenString.insert("\"", at: tokenString.startIndex)
+            tokenString.append("\"")
 
             // increment the consumed index
-            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
-            
+            advance()
+
             // evaluate two characters per iteration so that we can skip over
             // escaped double qoutes
-            var end = trimmed.index(consumedToIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
-            var window = trimmed[consumedToIndex..<end]
+            var end = trimmed.index(currentIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+            var window = trimmed[currentIndex..<end]
            
             while true {
 
@@ -103,55 +125,48 @@ func Lexer(cmd: String) -> [Token]? {
                 }
 
                 // Move window forward one character
-                consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
-                end = trimmed.index(consumedToIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
-                window = trimmed[consumedToIndex..<end]
+                advance()
+                end = trimmed.index(currentIndex, offsetBy: 2, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+                window = trimmed[currentIndex..<end]
                 
                 if window != "\\\"" && window.last == "\"" {
                     tokenString += window
-                    consumedToIndex = end
+                    currentIndex = end
                     break
                 }
                 
             }
 
-        } else if trimmed[consumedToIndex] == "(" || trimmed[consumedToIndex] == ")" {
-            // next token is a parenthesis
-
-            // add parenthesis character to token string
-            tokenString.insert(trimmed[consumedToIndex], at: tokenString.endIndex)
-
-            // move consumed to index forward one character
-            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
-
-        } else if trimmed[consumedToIndex] == "|" {
+        } else if char == "|" {
             // next token is a pipe character
 
-            // add pipe character to token string
-            tokenString.insert(trimmed[consumedToIndex], at: tokenString.endIndex)
-            // move consumed to index forward one character
-            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
+            tokenString.append(char)
+            advance()
         
-        } else if trimmed[consumedToIndex].isWhitespace {
+        } else if char.isWhitespace {
             // ignore whitespace characters
             
-            // move consumed to index forward one character
-            consumedToIndex = trimmed.index(consumedToIndex, offsetBy: 1)
+            advance()
+
+        } else if char == ">" {
+            // next token is redirect
+        
+            tokenString.append(char)
+            advance()
 
         } else {
             // next token is a word
 
-            while consumedToIndex != trimmed.endIndex {
-                let char = trimmed[consumedToIndex]
+            while let wordChar = currentChar {
 
                 // Break on delimiters (whitespace or known punctuation)
-                if char.isWhitespace || "()|=,.\"".contains(char) {
+                if wordChar.isWhitespace || wordChar == "|" {
                     break
                 }
 
-                tokenString.append(char)
-                consumedToIndex = trimmed.index(after: consumedToIndex)
-            }            
+                tokenString.append(wordChar)
+                advance()
+            }
         }
 
         if !tokenString.isEmpty {

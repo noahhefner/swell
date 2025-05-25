@@ -10,7 +10,9 @@ class Executor {
         var previousPipe: Pipe?
 
         for (index, redirCommand) in pipeline.enumerated() {
-            
+           
+            print("Spinning in executor")
+
             let process = Process()
             let pipe = isPipeline && index < pipeline.count - 1 ? Pipe() : nil
 
@@ -27,28 +29,42 @@ class Executor {
                 process.standardOutput = outputPipe
             }
 
-            /* / Redirections
-            if let fd = redirCommand.redirections.fileDescriptor, let filename = redirCommand.redirections.filename {
-                let mode = redirCommand.redirections.append ? "a" : "w"
-                let fileHandle = FileHandle(forWritingAtPath: filename)
-                    ?? FileManager.default.createFile(atPath: filename, contents: nil, attributes: nil).flatMap {
-                        FileHandle(forWritingAtPath: filename)
-                    }
+            // Redirections
+            for redirection in redirCommand.redirections {
+                
+                // file to redirect to
+                let filename = redirection.filename
 
-                guard let handle = fileHandle else {
-                    throw NSError(domain: "Executor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open file: \(filename)"])
+                // Try to open it first
+                var fileHandle = FileHandle(forWritingAtPath: filename)
+
+                if fileHandle == nil {
+                    // If it doesn't exist, try to create it
+                    let created = FileManager.default.createFile(atPath: filename, contents: nil, attributes: nil)
+                    if created {
+                        fileHandle = FileHandle(forWritingAtPath: filename)
+                    }
                 }
 
-                switch fd {
+                guard let handle = fileHandle else {
+                        throw NSError(domain: "Executor", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to open file for redirection: \(filename)"])
+                }
+                
+                if redirection.append {
+                    // Move to the end of the file to append
+                    handle.seekToEndOfFile()
+                }
+
+                switch redirection.fileDescriptor {
                 case 1:
                     process.standardOutput = handle
                 case 2:
                     process.standardError = handle
                 default:
-                    throw NSError(domain: "Executor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported file descriptor: \(fd)"])
+                    throw NSError(domain: "Executor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported file descriptor: \(redirection.fileDescriptor)"])
                 }
+                
             }
-            */
 
             try process.run()
             previousPipe = pipe

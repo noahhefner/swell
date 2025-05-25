@@ -29,10 +29,7 @@ loop: repeat {
         print("Goodbye!")
         break loop
     default:
-        if let tokens = Lexer(cmd: cmd) {
-            for token in tokens {
-                print(token.type)
-            }
+        if let tokens = try Lexer(cmd: cmd) {
             if let parsedCommand = try Parse(tokens: tokens) {
                 let executor = Executor()
                 try executor.execute(command: parsedCommand)
