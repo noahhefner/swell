@@ -37,13 +37,13 @@ func Parse(tokens: [Token]) throws -> Command? {
         return token.type == tokenType
     }
 
-    // NON-TERMINAL: Parse a command.
+    // Parse a command.
     func ParseCommand () throws -> Command {
         let pipeline:Pipeline = try ParsePipeline()
         return Command(pipeline: pipeline)
     }
 
-    // NON-TERMINAL: Parse a pipeline.
+    // Parse a pipeline.
     func ParsePipeline () throws -> Pipeline {
         var commands: [CommandWithRedirections] = []
     
@@ -51,7 +51,6 @@ func Parse(tokens: [Token]) throws -> Command? {
         commands.append(firstCommand)
     
         while let token = currentToken, token.type == TokenType.pipe {
-            print("Spinning in ParsePipeline")
             advance()
             let nextCommand = try ParseRedirectionCommand()
             commands.append(nextCommand)
@@ -60,13 +59,12 @@ func Parse(tokens: [Token]) throws -> Command? {
         return Pipeline(commandsWithRedirections: commands) 
     }
 
-    // NON-TERMINAL: Parse a redirection command.
+    // Parse a redirection command.
     func ParseRedirectionCommand () throws -> CommandWithRedirections {
         let simple = try ParseSimpleCommand()
         var redirs: [Redirection] = []
     
         while let token = currentToken, token.isRedirectionToken() {
-            print("Spinning in ParseRedirectionCommand")
             let redir = try ParseRedirection()
             redirs.append(redir)
         }
@@ -89,7 +87,7 @@ func Parse(tokens: [Token]) throws -> Command? {
         // match the command args. args can be either words or string literals
         var args: [String] = []
         while let token = currentToken, token.type == TokenType.word || token.type == TokenType.stringLiteral {
-            print("Spinning in ParseSimpleCommand")
+            
             let arg = parseArgument(token)
             args.append(arg)
             advance()
