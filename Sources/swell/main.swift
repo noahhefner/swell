@@ -21,7 +21,6 @@ loop: repeat {
     // read command
     let cmd = read_cmd()
 
-
     switch cmd {
     case "":
         continue
