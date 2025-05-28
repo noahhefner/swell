@@ -50,33 +50,44 @@ func getCommandFromUser () throws -> String {
 
         switch c {
 
-        case 13: // Enter key
+        // Enter key
+        case 13:
             break loop
 
-        case 127: // Backspace
+        // Backspace
+        case 127:
             if cursor > 0 {
                 cursor -= 1
                 buffer.remove(at: cursor)
                 try redrawLine(buffer, cursor)
             }
 
-        case 27: // Escape
+        // Escape
+        case 27:
+
             var seq = [UInt8](repeating: 0, count: 2)
             if read(STDIN_FILENO, &seq, 2) == 2 {
                 if seq[0] == 91 {
                     switch seq[1] {
-                    case 68: // Left
+
+                    // left arrow key
+                    case 68:
                         if cursor > 0 {
+                            // \u{1B}[1D is the ANSI escape sequence to move
+                            // the cursor one character to the left
                             cursor -= 1
-                            print("\u{1B}[1D", terminator: "")
-                            fflush(nil)
+                            printAndFlush("\u{1B}[1D")
                         }
-                    case 67: // Right
+                    
+                    // right arrow key
+                    case 67:
+                        // \u{1B}[1C is the ANSI escape sequence to move
+                        // the cursor one character to the left
                         if cursor < buffer.count {
                             cursor += 1
-                            print("\u{1B}[1C", terminator: "")
-                            fflush(nil)
+                            printAndFlush("\u{1B}[1C")
                         }
+                    
                     default:
                         break loop
                     }
@@ -107,8 +118,7 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
     //
     // # is the prompt.
 
-    print("\u{1B}[2K\r# " + String(buffer), terminator: "")
-    fflush(nil)
+    printAndFlush("\u{1B}[2K\r# " + String(buffer))
 
     // calculate the position of the cursor
     let pos = buffer.count - cursor
@@ -117,9 +127,33 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
     if pos > 0 {
         // \u{1B}[\(pos)D is an ANSI escape sequence to move the cursor left by 
         // pos columns.
-        print("\u{1B}[\(pos)D", terminator: "")
-        fflush(nil)
+        printAndFlush("\u{1B}[\(pos)D")
     }
+
+}
+
+/// Print the given string and terminator, then flush.
+///
+/// A note on Swift's print() function:
+/// When Swift's print() is called without the terminator argument, standard
+/// out is line-buffered. When print() is called with the terminator argument, 
+/// standard out is fully buffered.
+///
+/// Since we've enabled raw mode, we need to manually flush standard out every 
+/// time print() is called. This is accomplished by calling fflush(nil).
+///
+/// Due to Swift's strict concurrency model, we cannot call fflush(stdout)
+/// directly. Swift gives the following error:
+///
+/// fflush(stdout)
+///        `- error: reference to var 'stdout' is not concurrency-safe because 
+///           it involves shared mutable state
+///
+/// As a workaround, we can call fflush(nil) to flush all streams.
+func printAndFlush(_ str: String, terminator: String = "") {
+
+    print(str, terminator: terminator)
+    fflush(nil)
 
 }
 
@@ -138,8 +172,8 @@ func mainLoop () throws {
         disableRawMode(original: &userTermAttr)
     }
 
-    print("\r", terminator: "")
-    fflush(nil)
+    // move cursor to beginning of current line
+    printAndFlush("\r")
 
     // main loop
     loop: repeat {
@@ -151,8 +185,7 @@ func mainLoop () throws {
         let cmd = try getCommandFromUser()
 
         // move cursor to beginning of next line
-        print("\r")
-        fflush(nil)
+        printAndFlush("\r", terminator: "\n")
 
         switch cmd {
         case "":
@@ -173,10 +206,10 @@ func mainLoop () throws {
 
     } while true
 
-    // successful exit
-    exit(0)
-
 }
 
 // execute swell shell
 try mainLoop()
+
+// successful exit
+exit(0)
