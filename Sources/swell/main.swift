@@ -150,7 +150,7 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
 ///           it involves shared mutable state
 ///
 /// As a workaround, we can call fflush(nil) to flush all streams.
-func printAndFlush(_ str: String, _ terminator: String = "") {
+func printAndFlush(_ str: String, terminator: String = "") {
 
     print(str, terminator: terminator)
     fflush(nil)
@@ -185,7 +185,7 @@ func mainLoop () throws {
         let cmd = try getCommandFromUser()
 
         // move cursor to beginning of next line
-        print("\r", terminator: "\n")
+        printAndFlush("\r", terminator: "\n")
 
         switch cmd {
         case "":
