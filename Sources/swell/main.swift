@@ -1,21 +1,31 @@
 /// Swell shell
 
+// @preconcurrency is used so that we can access stdout variable without 
+// getting compile-time concurrency errors.
+@preconcurrency import Glibc
 import Foundation
-import Glibc
 
-/// Enables raw mode via C library function cfmakeraw.
-///
-/// cfmakeraw sets the following terminal attributes in a termios struct:
-///   termios_p->c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
-///                   | INLCR | IGNCR | ICRNL | IXON);
-///   termios_p->c_oflag &= ~OPOST;
-///   termios_p->c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-///   termios_p->c_cflag &= ~(CSIZE | PARENB);
-///   termios_p->c_cflag |= CS8;
+/// Enables raw mode via C library functions.
 func enableRawMode() {
+
     var raw = termios()
     tcgetattr(STDIN_FILENO, &raw)
-    cfmakeraw(&raw)
+
+    // input flags
+    raw.c_iflag &= ~(UInt32(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | IXON))
+    raw.c_iflag |= UInt32(ICRNL)
+
+    // output flags
+    raw.c_oflag |= UInt32(OPOST)
+    raw.c_oflag |= UInt32(ONLCR)
+
+    // local flags
+    raw.c_lflag &= ~(UInt32(ECHO | ICANON | ISIG | IEXTEN))
+    raw.c_lflag |= UInt32(ECHONL)
+
+    // control flags
+    raw.c_cflag |= UInt32(CS8)
+
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
 }
 
@@ -51,7 +61,7 @@ func getCommandFromUser () throws -> String {
         switch c {
 
         // Enter key
-        case 13:
+        case 10:
             break loop
 
         // Backspace
@@ -132,7 +142,7 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
 
 }
 
-/// Print the given string and terminator, then flush.
+/// Print the given string and terminator, then immediately flush stdout.
 ///
 /// A note on Swift's print() function:
 /// When Swift's print() is called without the terminator argument, standard
@@ -140,20 +150,11 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
 /// standard out is fully buffered.
 ///
 /// Since we've enabled raw mode, we need to manually flush standard out every 
-/// time print() is called. This is accomplished by calling fflush(nil).
-///
-/// Due to Swift's strict concurrency model, we cannot call fflush(stdout)
-/// directly. Swift gives the following error:
-///
-/// fflush(stdout)
-///        `- error: reference to var 'stdout' is not concurrency-safe because 
-///           it involves shared mutable state
-///
-/// As a workaround, we can call fflush(nil) to flush all streams.
+/// time print() is called. This is accomplished by calling fflush(stdout).
 func printAndFlush(_ str: String, terminator: String = "") {
 
     print(str, terminator: terminator)
-    fflush(nil)
+    fflush(stdout)
 
 }
 

@@ -26,7 +26,7 @@ class Executor {
             if let outputPipe = pipe {
                 // Pipe output directly to next command
                 process.standardOutput = outputPipe
-            } else {
+            } /* else {
                 // Command is the last command in the pipeline. Because raw 
                 // mode is enabled, we need to intercept the command output
                 // and replace the \n characters with \r\n. This ensures that
@@ -44,7 +44,7 @@ class Executor {
                         printAndFlush(fixed)
                     }
                 }
-            }
+            } */
 
             // Redirections
             for redirection in redirCommand.redirections {
