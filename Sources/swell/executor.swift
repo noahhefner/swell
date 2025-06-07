@@ -7,12 +7,12 @@ class Executor {
         let pipeline = command.pipeline.commandsWithRedirections
         let isPipeline = pipeline.count > 1
 
-        var previousPipe: Pipe?
+        var previousPipe: Foundation.Pipe?
         var processes: [Process] = []
 
         for (index, redirCommand) in pipeline.enumerated() {
             let process = Process()
-            let pipe = isPipeline && index < pipeline.count - 1 ? Pipe() : nil
+            let pipe = isPipeline && index < pipeline.count - 1 ? Foundation.Pipe() : nil
 
             // Use PATH resolution via /usr/bin/env
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

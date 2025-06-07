@@ -1,150 +1,160 @@
 import Foundation
 
-enum TokenType {
-    case stringLiteral     // "some string literal"
-    case pipe              // |
-    case redirectOut       // >
-    case redirectAppend    // >>
-    case redirectErr       // 2>
-    case redirectErrAppend // 2>>
-    case redirect1         // 1>
-    case redirect1Append   // 1>>
-    case word              // ls
+enum Token {
+    case stringLiteral(String)  // "some string literal"
+    case pipe                   // |
+    case redirect               // >
+    case redirectAppend         // >>
+    case redirectOut            // 1>
+    case redirectOutAppend      // 1>>
+    case redirectErr            // 2>
+    case redirectErrAppend      // 2>>
+    case word(String)           // ls, whoami, pwd
 }
 
 enum LexerError: Error {
-    case runtimeError(String)
+    case matchNotFound(String)
 }
 
-class Token {
-    var text: String
-    var type: TokenType
+protocol Tokenizer {
+    var regexPattern: Regex<Substring> { get }
+    func token (_ match: String) -> Token
+}
 
-    init(text: String) {
-        self.text = text
+struct StringLiteral:Tokenizer {
+    
+    var regexPattern: Regex<Substring> = try! Regex(#""(?:[^"\\]|\\.)*""#)
 
-        switch text {
-        case "|":
-            self.type = .pipe
-        case ">", "1>":
-            self.type = .redirectOut
-        case ">>", "1>>":
-            self.type = .redirectAppend
-        case "2>":
-            self.type = .redirectErr
-        case "2>>":
-            self.type = .redirectErrAppend
-        case let s where s.hasPrefix("\"") && s.hasSuffix("\""):
-            self.type = .stringLiteral
-        default:
-            self.type = .word
-        }
+    func token (_ match: String) -> Token {
+
+        return Token.stringLiteral(match)
+
     }
 
-    func isRedirectionToken() -> Bool {
-        switch type {
-        case .redirectOut, .redirectAppend, .redirectErr, .redirectErrAppend, .redirect1, .redirect1Append:
-            return true
-        default:
-            return false
-        }
+}
+
+struct Pipe:Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#"\|"#)
+
+    func token (_ match: String) -> Token {
+
+        return Token.pipe
+
+    }
+
+}
+
+struct Redirect: Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#">"#)
+    
+    func token(_ match: String) -> Token {
+        return Token.redirect
     }
 }
 
-func Lexer(cmd: String) throws -> [Token]? {
-    let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
+struct RedirectAppend: Tokenizer {
 
-    var tokens: [Token] = []
-    var currentIndex = trimmed.startIndex
+    var regexPattern: Regex<Substring> = try! Regex(#">>"#)
 
-    func advance(_ by: Int = 1) {
-        currentIndex = trimmed.index(currentIndex, offsetBy: by, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+    func token(_ match: String) -> Token {
+        return Token.redirectAppend
+    }
+}
+
+struct RedirectOut: Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#"1>"#)
+
+    func token(_ match: String) -> Token {
+        return Token.redirectOut
+    }
+}
+
+struct RedirectOutAppend: Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#"1>>"#)
+
+    func token(_ match: String) -> Token {
+        return Token.redirectOutAppend
+    }
+}
+
+struct RedirectErr: Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#"2>"#)
+
+    func token(_ match: String) -> Token {
+        return Token.redirectErr
+    }
+}
+
+struct RedirectErrAppend: Tokenizer {
+
+    var regexPattern: Regex<Substring> = try! Regex(#"2>>"#)
+
+    func token(_ match: String) -> Token {
+        return Token.redirectErrAppend
+    }
+}
+
+struct Word: Tokenizer {
+    
+    var regexPattern: Regex<Substring> = try! Regex(#"[^\s|><"]+"#)
+
+    func token(_ match: String) -> Token {
+        return Token.word(match)
+    }
+}
+
+final class Lexer {
+
+    var tokenizers: [Tokenizer]
+
+    init(tokenizers: [Tokenizer]) {
+        self.tokenizers = tokenizers
     }
 
-    func peek(_ offset: Int = 1) -> Character? {
-        let idx = trimmed.index(currentIndex, offsetBy: offset, limitedBy: trimmed.endIndex)
-        return idx != nil && idx! < trimmed.endIndex ? trimmed[idx!] : nil
-    }
+    func parse(_ cmd: String) throws -> [Token] {
 
-    while currentIndex < trimmed.endIndex {
-        let char = trimmed[currentIndex]
+        let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [Token]() }
 
-        // Skip whitespace
-        if char.isWhitespace {
-            advance()
-            continue
-        }
+        var content = trimmed
+        var tokens = [Token]()
 
-        // Pipe
-        if char == "|" {
-            tokens.append(Token(text: "|"))
-            advance()
-            continue
-        }
+        while content.count > 0 {
 
-        // String literal
-        if char == "\"" {
-            var str = "\""
-            advance()
-            while currentIndex < trimmed.endIndex {
-                let c = trimmed[currentIndex]
-                if c == "\\" && peek() == "\"" {
-                    str.append("\\\"")
-                    advance(2)
-                } else if c == "\"" {
-                    str.append("\"")
-                    advance()
-                    break
-                } else {
-                    str.append(c)
-                    advance()
+            var foundMatch = false
+
+            for tokenizer in self.tokenizers {
+
+                if let match = try tokenizer.regexPattern.prefixMatch(in: content) {
+
+                    let token = tokenizer.token(String(match.output))
+
+					tokens.append(token)
+					content.removeFirst(match.count)
+					foundMatch = true
+
+					break
+
                 }
+
             }
-            tokens.append(Token(text: str))
-            continue
+
+            if !foundMatch {
+				throw LexerError.matchNotFound(content)
+			}
+
+            // trim any leading whitespace
+            content = String(content.drop(while: { $0.isWhitespace }))
+
         }
 
-        // Redirections: 2>, 2>>, 1>, 1>>
-        if char.isNumber, let next = peek(), next == ">" {
-            let digit = char
-            advance()
-            if peek() == ">" {
-                tokens.append(Token(text: "\(digit)>>"))
-                advance(2)
-            } else {
-                tokens.append(Token(text: "\(digit)>"))
-                advance()
-            }
-            continue
-        }
+        return tokens
 
-        // Redirections: >, >>
-        if char == ">" {
-            if peek() == ">" {
-                tokens.append(Token(text: ">>"))
-                advance(2)
-            } else {
-                tokens.append(Token(text: ">"))
-                advance()
-            }
-            continue
-        }
-
-        // Word
-        var word = ""
-        while currentIndex < trimmed.endIndex {
-            let c = trimmed[currentIndex]
-            if c.isWhitespace || c == "|" || c == ">" || c == "\"" {
-                break
-            }
-            word.append(c)
-            advance()
-        }
-        if !word.isEmpty {
-            tokens.append(Token(text: word))
-        }
     }
 
-    return tokens
 }

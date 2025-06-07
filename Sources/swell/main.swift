@@ -176,6 +176,22 @@ func mainLoop () throws {
     // move cursor to beginning of current line
     printAndFlush("\r")
 
+    // create list of tokenizers
+    let tokenizers: [Tokenizer] = [
+        StringLiteral(),
+        RedirectErrAppend(),
+        RedirectOutAppend(),
+        RedirectAppend(),
+        RedirectErr(),
+        RedirectOut(),
+        Redirect(),
+        Pipe(),
+        Word()
+    ]
+
+    // create a lexer
+    let lexer = Lexer(tokenizers: tokenizers)
+
     // main loop
     loop: repeat {
 
@@ -197,11 +213,10 @@ func mainLoop () throws {
             break loop
         default:
             // execute command
-            if let tokens = try Lexer(cmd: cmd) {
-                if let parsedCommand = try Parse(tokens: tokens) {
-                    let executor = Executor()
-                    try executor.execute(command: parsedCommand)
-                }
+            let tokens = try lexer.parse(cmd)
+            if let parsedCommand = try Parse(tokens) {
+                let executor = Executor()
+                try executor.execute(command: parsedCommand)
             }
         }
 
