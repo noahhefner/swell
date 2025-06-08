@@ -72,37 +72,42 @@ func getCommandFromUser () throws -> String {
                 try redrawLine(buffer, cursor)
             }
 
-        // Escape
+        // Escape sequences
         case 27:
+            var seq = [UInt8](repeating: 0, count: 3)
+            let n = read(STDIN_FILENO, &seq, 2)
 
-            var seq = [UInt8](repeating: 0, count: 2)
-            if read(STDIN_FILENO, &seq, 2) == 2 {
-                if seq[0] == 91 {
-                    switch seq[1] {
+            if n == 2 && seq[0] == 91 {
+                switch seq[1] {
 
-                    // left arrow key
-                    case 68:
-                        if cursor > 0 {
-                            // \u{1B}[1D is the ANSI escape sequence to move
-                            // the cursor one character to the left
-                            cursor -= 1
-                            printAndFlush("\u{1B}[1D")
-                        }
-                    
-                    // right arrow key
-                    case 67:
-                        // \u{1B}[1C is the ANSI escape sequence to move
-                        // the cursor one character to the left
-                        if cursor < buffer.count {
-                            cursor += 1
-                            printAndFlush("\u{1B}[1C")
-                        }
-                    
-                    default:
-                        break loop
+                // Left arrow
+                case 68:
+                    if cursor > 0 {
+                        cursor -= 1
+                        printAndFlush("\u{1B}[1D")
                     }
+                
+                // Right arrow
+                case 67:
+                    if cursor < buffer.count {
+                        cursor += 1
+                        printAndFlush("\u{1B}[1C")
+                    }
+
+                // Delete key
+                case 51:
+                    var tilde: UInt8 = 0
+                    if read(STDIN_FILENO, &tilde, 1) == 1 && tilde == 126 {
+                        if cursor < buffer.count {
+                            buffer.remove(at: cursor)
+                            try redrawLine(buffer, cursor)
+                        }
+                    }
+                default:
+                    break
                 }
             }
+
 
         default:
             let char = Character(UnicodeScalar(c))
