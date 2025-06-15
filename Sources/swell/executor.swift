@@ -23,31 +23,14 @@ class Executor {
                 process.standardInput = inputPipe.fileHandleForReading
             }
 
+            // Pipe output to next command (if any)
             if let outputPipe = pipe {
-                // Pipe output directly to next command
                 process.standardOutput = outputPipe
-            } /* else {
-                // Command is the last command in the pipeline. Because raw 
-                // mode is enabled, we need to intercept the command output
-                // and replace the \n characters with \r\n. This ensures that
-                // for multi-line command output, the cursor is returned to the
-                // start of the next line after each line is printed.
-                let outputPipe = Pipe()
-                process.standardOutput = outputPipe
-
-                outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    guard !data.isEmpty else { return }
-                    if let text = String(data: data, encoding: .utf8) {
-                        // Normalize newlines
-                        let fixed = text.replacingOccurrences(of: "\n", with: "\r\n")
-                        printAndFlush(fixed)
-                    }
-                }
-            } */
+            }
 
             // Redirections
             for redirection in redirCommand.redirections {
+                
                 let filename = redirection.filename
                 var fileHandle = FileHandle(forWritingAtPath: filename)
 
