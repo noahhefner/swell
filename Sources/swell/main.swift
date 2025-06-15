@@ -5,7 +5,7 @@
 @preconcurrency import Glibc
 import Foundation
 
-/// Enables raw mode via C library functions.
+/// Enables terminal "raw" mode.
 func enableRawMode() {
 
     var raw = termios()
@@ -110,6 +110,8 @@ func getCommandFromUser () throws -> String {
 
 
         default:
+
+            // add character to buffer
             let char = Character(UnicodeScalar(c))
             buffer.insert(char, at: cursor)
             cursor += 1
@@ -149,7 +151,6 @@ func redrawLine(_ buffer: [Character], _ cursor: Int) throws {
 
 /// Print the given string and terminator, then immediately flush stdout.
 ///
-/// A note on Swift's print() function:
 /// When Swift's print() is called without the terminator argument, standard
 /// out is line-buffered. When print() is called with the terminator argument, 
 /// standard out is fully buffered.

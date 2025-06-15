@@ -1,3 +1,5 @@
+// Lexer for Swell shell
+
 import Foundation
 
 enum Token {

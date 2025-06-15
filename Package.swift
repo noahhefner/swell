@@ -6,6 +6,7 @@ let package = Package(
     name: "swell",
     targets: [
         .executableTarget(
-            name: "swell"),
+            name: "swell"
+        ),
     ]
 )

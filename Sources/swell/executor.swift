@@ -1,3 +1,5 @@
+// Command executorfor Swell shell
+
 import Foundation
 
 class Executor {
@@ -30,7 +32,7 @@ class Executor {
 
             // Redirections
             for redirection in redirCommand.redirections {
-                
+
                 let filename = redirection.filename
                 var fileHandle = FileHandle(forWritingAtPath: filename)
 
