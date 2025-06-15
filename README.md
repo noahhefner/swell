@@ -1,15 +1,15 @@
 # swell
-Shell written in Swift
 
-### Lessons Learned
+Shell written in Swift, inspired by [Will-Tyler/swell](https://github.com/Will-Tyler/swell).
 
-- Refresher on Unix I/O standard out, standard error, pipes, redirects
-- Swift 
-  - swiss army knife of languages
-  - amalgamation of techniques from other languages
-    - print like python
-    - structs like go
-    - very flexible, lots of optional syntactic sugar
-    - defer syntax like go
-  - print() is line-buffered when a terminator is not provided, but full buffered when a terminator is provided
-  - async troubles with fflush - need to flush after each print when terminator is used
+## Features
+
+- [X] Execute command with arguments
+- [X] Pipes
+- [X] Stream redirection
+- [X] Quit shell using `exit` command
+
+## Running Swell
+
+1. Install [Swift](https://github.com/swiftlang/swift-foundation).
+2. Run `swift run swell`.
