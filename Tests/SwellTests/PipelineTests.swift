@@ -39,8 +39,8 @@ struct PipelineTests {
         let redirect = pipeline.commands[0].stdoutRedirect
         if case .overwrite(let path) = redirect {
             #expect(path == "/tmp/out.txt")
-        } else {
-            Issue.record("Expected overwrite redirect, got \(redirect!)")
+        } else if let redirect {
+            Issue.record("Expected overwrite redirect, got \(redirect)")
         }
     }
 
@@ -53,8 +53,8 @@ struct PipelineTests {
         let redirect = pipeline.commands[0].stdoutRedirect
         if case .append(let path) = redirect {
             #expect(path == "/tmp/out.txt")
-        } else {
-            Issue.record("Expected append redirect, got \(redirect!)")
+        } else if let redirect {
+            Issue.record("Expected append redirect, got \(redirect)")
         }
     }
 

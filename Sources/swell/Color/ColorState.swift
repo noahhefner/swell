@@ -14,8 +14,8 @@ public struct ColorState: Sendable {
         isEnabled ? String(string) : stripAnsi(String(string))
     }
 
-    private func stripAnsi(_ s: String) -> String {
-        s.replacingOccurrences(of: "\u{1B}[^a-zA-Z]*[a-zA-Z]", with: "", options: .regularExpression)
+    private func stripAnsi(_ string: String) -> String {
+        string.replacingOccurrences(of: "\u{1B}[^a-zA-Z]*[a-zA-Z]", with: "", options: .regularExpression)
     }
 }
 

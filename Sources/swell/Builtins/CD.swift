@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CD: Sendable {
+public struct CdCommand: Sendable {
     public static func execute(path: String, environment: inout ShellEnvironment) -> CommandResult {
         let target = path == "~" ? (environment.variables["HOME"] ?? "/root") : path
         guard environment.changeDirectory(target) else {

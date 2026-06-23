@@ -36,6 +36,36 @@ public enum ParseError: Error, Sendable, Equatable {
     case unmatchedQuote
 }
 
+private enum RedirectStream {
+    case stdout, stdoutAppend, stderr, stderrAppend
+}
+
+private struct ParseState {
+    var commands: [ParsedCommand] = []
+    var currentName: String?
+    var currentArgs: [String] = []
+    var currentStdout: RedirectTarget?
+    var currentStderr: RedirectTarget?
+    var expectingFilename = false
+    var filenameFor: RedirectStream?
+
+    mutating func flushCommand() {
+        if let name = currentName {
+            let cmd = ParsedCommand(
+                name: name,
+                arguments: currentArgs,
+                stdoutRedirect: currentStdout,
+                stderrRedirect: currentStderr
+            )
+            commands.append(cmd)
+        }
+        currentName = nil
+        currentArgs = []
+        currentStdout = nil
+        currentStderr = nil
+    }
+}
+
 public struct Parser: Sendable {
     public init() {}
 
@@ -46,116 +76,13 @@ public struct Parser: Sendable {
         let tokens = try tokenize(trimmed)
         guard !tokens.isEmpty else { throw ParseError.emptyInput }
 
-        var commands: [ParsedCommand] = []
-        var currentName: String?
-        var currentArgs: [String] = []
-        var currentStdout: RedirectTarget?
-        var currentStderr: RedirectTarget?
-        var expectingFilename = false
-        var filenameFor: RedirectStream?
+        var state = ParseState()
 
-        enum RedirectStream {
-            case stdout, stdoutAppend, stderr, stderrAppend
-        }
+        try processTokens(tokens, state: &state)
+        state.flushCommand()
 
-        func flushCommand() {
-            if let name = currentName {
-                let cmd = ParsedCommand(
-                    name: name,
-                    arguments: currentArgs,
-                    stdoutRedirect: currentStdout,
-                    stderrRedirect: currentStderr
-                )
-                commands.append(cmd)
-            }
-            currentName = nil
-            currentArgs = []
-            currentStdout = nil
-            currentStderr = nil
-        }
-
-        for token in tokens {
-            if expectingFilename {
-                let path: String
-                switch token.kind {
-                case .filename(let p), .command(let p):
-                    path = p
-                default:
-                    throw ParseError.missingFilename
-                }
-                switch filenameFor {
-                case .stdout:
-                    currentStdout = .overwrite(path)
-                case .stdoutAppend:
-                    currentStdout = .append(path)
-                case .stderr:
-                    currentStderr = .overwrite(path)
-                case .stderrAppend:
-                    currentStderr = .append(path)
-                case nil:
-                    break
-                }
-                expectingFilename = false
-                filenameFor = nil
-                continue
-            }
-
-            switch token.kind {
-            case .command(let value):
-                if currentName == nil {
-                    currentName = value
-                } else {
-                    currentArgs.append(value)
-                }
-            case .pipe:
-                flushCommand()
-            case .redirectOut:
-                expectingFilename = true
-                filenameFor = .stdout
-                currentStdout = nil
-            case .redirectAppend:
-                expectingFilename = true
-                filenameFor = .stdoutAppend
-            case .redirectErr:
-                expectingFilename = true
-                filenameFor = .stderr
-                currentStderr = nil
-            case .redirectErrAppend:
-                expectingFilename = true
-                filenameFor = .stderrAppend
-            case .filename(let path):
-                if currentStdout != nil {
-                    let target: RedirectTarget
-                    switch currentStdout! {
-                    case .overwrite: target = .overwrite(path)
-                    case .append: target = .append(path)
-                    }
-                    currentStdout = target
-                } else if currentStderr != nil {
-                    let target: RedirectTarget
-                    switch currentStderr! {
-                    case .overwrite: target = .overwrite(path)
-                    case .append: target = .append(path)
-                    }
-                    currentStderr = target
-                } else {
-                    if currentName == nil { currentName = path }
-                    else { currentArgs.append(path) }
-                }
-            }
-        }
-        flushCommand()
-
-        guard !commands.isEmpty else { throw ParseError.emptyInput }
-        return ParsedPipeline(commands: commands)
-    }
-
-    private func currentStdoutFromToken(_ kind: TokenKind, path: String) -> RedirectTarget {
-        path.isEmpty ? .overwrite(path) : .overwrite(path)
-    }
-
-    private func currentStderrFromToken(_ kind: TokenKind, path: String) -> RedirectTarget {
-        path.isEmpty ? .overwrite(path) : .overwrite(path)
+        guard !state.commands.isEmpty else { throw ParseError.emptyInput }
+        return ParsedPipeline(commands: state.commands)
     }
 
     private func tokenize(_ input: String) throws -> [Token] {
@@ -163,18 +90,19 @@ public struct Parser: Sendable {
         var i = input.startIndex
 
         while i < input.endIndex {
-            if input[i].isWhitespace {
+            let char = input[i]
+            if char.isWhitespace {
                 i = input.index(after: i)
                 continue
             }
 
-            if input[i] == "|" {
+            if char == "|" {
                 tokens.append(Token(.pipe))
                 i = input.index(after: i)
                 continue
             }
 
-            if input[i] == ">" {
+            if char == ">" {
                 let next = input.index(after: i)
                 if next < input.endIndex, input[next] == ">" {
                     tokens.append(Token(.redirectAppend))
@@ -186,56 +114,191 @@ public struct Parser: Sendable {
                 continue
             }
 
-            if input[i] == "2" {
-                let next = input.index(after: i)
-                if next < input.endIndex, input[next] == ">" {
-                    let after = input.index(after: next)
-                    if after < input.endIndex, input[after] == ">" {
-                        tokens.append(Token(.redirectErrAppend))
-                        i = input.index(after: after)
-                    } else {
-                        tokens.append(Token(.redirectErr))
-                        i = after
-                    }
-                    continue
-                }
-            }
-
-            if input[i] == "'" || input[i] == "\"" {
-                let quote = input[i]
+            let handled = try handlePotentialRedirectOrQuote(input: input, index: &i, tokens: &tokens)
+            if !handled {
                 i = input.index(after: i)
-                var value = ""
-                while i < input.endIndex, input[i] != quote {
-                    if quote == "\"" && input[i] == "\\" {
-                        i = input.index(after: i)
-                        if i < input.endIndex {
-                            value.append(input[i])
-                            i = input.index(after: i)
-                        }
-                        continue
-                    }
-                    value.append(input[i])
-                    i = input.index(after: i)
-                }
-                guard i < input.endIndex else { throw ParseError.unmatchedQuote }
-                i = input.index(after: i)
-                tokens.append(Token(.command(value)))
-            } else {
-                var value = ""
-                while i < input.endIndex, !input[i].isWhitespace && input[i] != "|" && input[i] != ">" {
-                    if input[i] == "2" {
-                        let next = input.index(after: i)
-                        if next < input.endIndex, input[next] == ">" { break }
-                    }
-                    value.append(input[i])
-                    i = input.index(after: i)
-                }
-                if !value.isEmpty {
-                    tokens.append(Token(.command(value)))
-                }
             }
         }
 
         return tokens
+    }
+
+    private func handlePotentialRedirectOrQuote(
+        input: String,
+        index: inout String.Index,
+        tokens: inout [Token]
+    ) throws -> Bool {
+        let char = input[index]
+
+        if char == "2" {
+            let next = input.index(after: index)
+            if next < input.endIndex, input[next] == ">" {
+                let after = input.index(after: next)
+                if after < input.endIndex, input[after] == ">" {
+                    tokens.append(Token(.redirectErrAppend))
+                    index = input.index(after: after)
+                } else {
+                    tokens.append(Token(.redirectErr))
+                    index = after
+                }
+                return true
+            }
+        }
+
+        if char == "'" || char == "\"" {
+            try parseQuotedString(input: input, quote: char, index: &index, tokens: &tokens)
+            return true
+        }
+
+        if !char.isWhitespace && char != "|" && char != ">" {
+            parseWord(input: input, index: &index, tokens: &tokens)
+            return true
+        }
+
+        return false
+    }
+
+    private func parseQuotedString(
+        input: String,
+        quote: Character,
+        index: inout String.Index,
+        tokens: inout [Token]
+    ) throws {
+        index = input.index(after: index)
+        var value = ""
+        while index < input.endIndex, input[index] != quote {
+            if quote == "\"" && input[index] == "\\" {
+                index = input.index(after: index)
+                if index < input.endIndex {
+                    value.append(input[index])
+                    index = input.index(after: index)
+                }
+                continue
+            }
+            value.append(input[index])
+            index = input.index(after: index)
+        }
+        guard index < input.endIndex else { throw ParseError.unmatchedQuote }
+        index = input.index(after: index)
+        tokens.append(Token(.command(value)))
+    }
+
+    private func parseWord(
+        input: String,
+        index: inout String.Index,
+        tokens: inout [Token]
+    ) {
+        var value = ""
+        while index < input.endIndex {
+            let char = input[index]
+            if char.isWhitespace || char == "|" || char == ">" { break }
+            if char == "2" {
+                let next = input.index(after: index)
+                if next < input.endIndex, input[next] == ">" { break }
+            }
+            value.append(char)
+            index = input.index(after: index)
+        }
+        if !value.isEmpty {
+            tokens.append(Token(.command(value)))
+        }
+    }
+
+    private func processTokens(
+        _ tokens: [Token],
+        state: inout ParseState
+    ) throws {
+        for token in tokens {
+            if state.expectingFilename {
+                try handleExpectingFilename(
+                    token,
+                    filenameFor: &state.filenameFor,
+                    expectingFilename: &state.expectingFilename,
+                    currentStdout: &state.currentStdout,
+                    currentStderr: &state.currentStderr
+                )
+                continue
+            }
+
+            switch token.kind {
+            case .command(let value):
+                if state.currentName == nil {
+                    state.currentName = value
+                } else {
+                    state.currentArgs.append(value)
+                }
+            case .pipe:
+                state.flushCommand()
+            case .redirectOut:
+                state.expectingFilename = true
+                state.filenameFor = .stdout
+                state.currentStdout = nil
+            case .redirectAppend:
+                state.expectingFilename = true
+                state.filenameFor = .stdoutAppend
+            case .redirectErr:
+                state.expectingFilename = true
+                state.filenameFor = .stderr
+                state.currentStderr = nil
+            case .redirectErrAppend:
+                state.expectingFilename = true
+                state.filenameFor = .stderrAppend
+            case .filename(let path):
+                assignFilename(path, state: &state)
+            }
+        }
+    }
+
+    private func handleExpectingFilename(
+        _ token: Token,
+        filenameFor: inout RedirectStream?,
+        expectingFilename: inout Bool,
+        currentStdout: inout RedirectTarget?,
+        currentStderr: inout RedirectTarget?
+    ) throws {
+        let path: String
+        switch token.kind {
+        case .filename(let name), .command(let name):
+            path = name
+        default:
+            throw ParseError.missingFilename
+        }
+        switch filenameFor {
+        case .stdout:
+            currentStdout = .overwrite(path)
+        case .stdoutAppend:
+            currentStdout = .append(path)
+        case .stderr:
+            currentStderr = .overwrite(path)
+        case .stderrAppend:
+            currentStderr = .append(path)
+        case nil:
+            break
+        }
+        expectingFilename = false
+        filenameFor = nil
+    }
+
+    private func assignFilename(
+        _ path: String,
+        state: inout ParseState
+    ) {
+        if let currentStdout = state.currentStdout {
+            switch currentStdout {
+            case .overwrite:
+                state.currentStdout = .overwrite(path)
+            case .append:
+                state.currentStdout = .append(path)
+            }
+        } else if let currentStderr = state.currentStderr {
+            switch currentStderr {
+            case .overwrite:
+                state.currentStderr = .overwrite(path)
+            case .append:
+                state.currentStderr = .append(path)
+            }
+        } else {
+            if state.currentName == nil { state.currentName = path } else { state.currentArgs.append(path) }
+        }
     }
 }

@@ -82,7 +82,8 @@ struct ExecutionIntegrationTests {
         try process.run()
         process.waitUntilExit()
 
-        let content = try String(contentsOfFile: tempPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = try String(contentsOfFile: tempPath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         #expect(content == "test data")
     }
 }

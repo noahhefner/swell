@@ -1,79 +1,127 @@
 import Foundation
 
+private enum LaunchResult {
+    case process(Process)
+    case failure(error: String, exitCode: Int32)
+}
+
 public struct PipelineExecutor: Sendable {
-    public static func execute(commands: [ParsedCommand],
-                                environment: ShellEnvironment) -> CommandResult {
+    public static func execute(
+        commands: [ParsedCommand],
+        environment: ShellEnvironment
+    ) -> CommandResult {
         guard commands.count > 1 else {
             return .failure(error: "pipeline requires at least 2 commands", exitCode: 1)
         }
 
-        var pipes: [Pipe] = []
-        for _ in 0..<(commands.count - 1) {
-            pipes.append(Pipe())
-        }
-
+        let pipes = makePipes(count: commands.count - 1)
         var processes: [Process] = []
 
         for (index, cmd) in commands.enumerated() {
-            guard let executable = environment.resolveExecutable(cmd.name) else {
-                for p in processes { if p.isRunning { p.terminate() } }
-                return .failure(error: "command not found: \(cmd.name)", exitCode: 127)
-            }
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = cmd.arguments
-            process.environment = environment.exportedEnvironment()
-
-            if index == 0 {
-                process.standardInput = FileHandle.standardInput
-            } else if index - 1 < pipes.count {
-                let readHandle = pipes[index - 1].fileHandleForReading
-                process.standardInput = readHandle
-            }
-
-            if index < commands.count - 1, index < pipes.count {
-                let writeHandle = pipes[index].fileHandleForWriting
-                process.standardOutput = writeHandle
-            }
-
-            for (pi, p) in pipes.enumerated() {
-                if pi != index - 1 {
-                    try? p.fileHandleForReading.close()
-                }
-                if pi != index {
-                    try? p.fileHandleForWriting.close()
-                }
-            }
-
-            do {
-                try process.run()
+            let result = launchProcess(
+                command: cmd,
+                at: index,
+                total: commands.count,
+                environment: environment,
+                pipes: pipes
+            )
+            switch result {
+            case .process(let process):
                 processes.append(process)
-            } catch {
-                for p in processes { if p.isRunning { p.terminate() } }
-                return .failure(error: "failed to launch \(cmd.name): \(error.localizedDescription)", exitCode: 1)
+            case .failure(let error, let code):
+                terminateAll(processes)
+                return .failure(error: error, exitCode: code)
             }
         }
 
-        for p in pipes {
-            try? p.fileHandleForWriting.close()
+        closePipeWriters(pipes)
+        return collectResults(processes: processes)
+    }
+
+    private static func makePipes(count: Int) -> [Pipe] {
+        (0..<count).map { _ in Pipe() }
+    }
+
+    private static func launchProcess(
+        command: ParsedCommand,
+        at index: Int,
+        total: Int,
+        environment: ShellEnvironment,
+        pipes: [Pipe]
+    ) -> LaunchResult {
+        guard let executable = environment.resolveExecutable(command.name) else {
+            return .failure(error: "command not found: \(command.name)", exitCode: 127)
         }
 
-        var output = ""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = command.arguments
+        process.environment = environment.exportedEnvironment()
+
+        if index == 0 {
+            process.standardInput = FileHandle.standardInput
+        } else if index - 1 < pipes.count {
+            process.standardInput = pipes[index - 1].fileHandleForReading
+        }
+
+        if index < total - 1, index < pipes.count {
+            process.standardOutput = pipes[index].fileHandleForWriting
+        }
+
+        closeUnusedPipes(at: index, pipes: pipes)
+
+        do {
+            try process.run()
+            return .process(process)
+        } catch {
+            return .failure(
+                error: "failed to launch \(command.name): \(error.localizedDescription)",
+                exitCode: 1
+            )
+        }
+    }
+
+    private static func closeUnusedPipes(at index: Int, pipes: [Pipe]) {
+        for (pipeIndex, pipe) in pipes.enumerated() {
+            if pipeIndex != index - 1 {
+                try? pipe.fileHandleForReading.close()
+            }
+            if pipeIndex != index {
+                try? pipe.fileHandleForWriting.close()
+            }
+        }
+    }
+
+    private static func closePipeWriters(_ pipes: [Pipe]) {
+        for pipe in pipes {
+            try? pipe.fileHandleForWriting.close()
+        }
+    }
+
+    private static func terminateAll(_ processes: [Process]) {
+        for process in processes where process.isRunning {
+            process.terminate()
+        }
+    }
+
+    private static func collectResults(processes: [Process]) -> CommandResult {
         if let lastProcess = processes.last {
             let outPipe = Pipe()
             lastProcess.standardOutput = outPipe
             lastProcess.waitUntilExit()
             let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            output = String(data: data, encoding: .utf8) ?? ""
-        } else {
-            for p in processes { p.waitUntilExit() }
+            let output = String(data: data, encoding: .utf8) ?? ""
+
+            if lastProcess.terminationStatus != 0 {
+                let code = lastProcess.terminationStatus
+                return .failure(error: "exit code \(code)", exitCode: code)
+            }
+            return .success(output: output)
         }
 
-        let exitCode = processes.last?.terminationStatus ?? 0
-        if exitCode != 0 {
-            return .failure(error: "exit code \(exitCode)", exitCode: exitCode)
+        for process in processes {
+            process.waitUntilExit()
         }
-        return .success(output: output)
+        return .success(output: "")
     }
 }

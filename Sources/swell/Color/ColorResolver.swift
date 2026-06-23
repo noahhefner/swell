@@ -26,9 +26,9 @@ public struct ColorResolver: Sendable {
         if clicolor == "0" { return .disabled }
         if clicolorForce == "1" { return .enabled }
 
-        if let t = term {
+        if let term {
             let monoTerms = ["dumb", "xterm-mono", "vt100"]
-            if monoTerms.contains(t) { return .disabled }
+            if monoTerms.contains(term) { return .disabled }
         }
 
         let outTTY = stdoutIsTTY ?? (isatty(STDOUT_FILENO) != 0)

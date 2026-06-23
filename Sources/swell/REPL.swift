@@ -61,7 +61,8 @@ public final class REPL: @unchecked Sendable {
             case .failure(let error, let code):
                 let colorState = colorResolver.resolve()
                 if colorState.isEnabled {
-                    FileHandle.standardError.write(Data("\(colorConfig.errorPrefix)error: \(error)\(colorConfig.errorSuffix)\n".utf8))
+                    let msg = "\(colorConfig.errorPrefix)error: \(error)\(colorConfig.errorSuffix)\n"
+                    FileHandle.standardError.write(Data(msg.utf8))
                 } else {
                     FileHandle.standardError.write(Data("error: \(error)\n".utf8))
                 }
@@ -110,7 +111,7 @@ public final class REPL: @unchecked Sendable {
         case "exit":
             return Exit.execute()
         case "cd":
-            return CD.execute(path: command.arguments.first ?? "~", environment: &environment)
+            return CdCommand.execute(path: command.arguments.first ?? "~", environment: &environment)
         case "pwd":
             return PWD.execute(environment: environment)
         case "export":
@@ -122,10 +123,12 @@ public final class REPL: @unchecked Sendable {
         }
     }
 
-    private func executeExternal(command: ParsedCommand,
-                                  stdin: FileHandle?,
-                                  stdoutDest: FileHandle?,
-                                  stderrDest: FileHandle?) -> CommandResult {
+    private func executeExternal(
+        command: ParsedCommand,
+        stdin: FileHandle?,
+        stdoutDest: FileHandle?,
+        stderrDest: FileHandle?
+    ) -> CommandResult {
         guard let executable = environment.resolveExecutable(command.name) else {
             return .failure(error: "command not found: \(command.name)", exitCode: 127)
         }
@@ -135,21 +138,15 @@ public final class REPL: @unchecked Sendable {
         process.arguments = command.arguments
         process.environment = environment.exportedEnvironment()
 
-        if let stdin = stdin {
-            process.standardInput = stdin
-        }
-        if let stdoutDest = stdoutDest {
-            process.standardOutput = stdoutDest
-        }
-        if let stderrDest = stderrDest {
-            process.standardError = stderrDest
-        }
+        if let stdin { process.standardInput = stdin }
+        if let stdoutDest { process.standardOutput = stdoutDest }
+        if let stderrDest { process.standardError = stderrDest }
 
         let outPipe = stdoutDest == nil ? Pipe() : nil
         let errPipe = stderrDest == nil ? Pipe() : nil
 
-        if outPipe != nil { process.standardOutput = outPipe! }
-        if errPipe != nil { process.standardError = errPipe! }
+        if let outPipe { process.standardOutput = outPipe }
+        if let errPipe { process.standardError = errPipe }
 
         do {
             try process.run()
@@ -158,108 +155,145 @@ public final class REPL: @unchecked Sendable {
             return .failure(error: "failed to launch \(command.name): \(error.localizedDescription)", exitCode: 1)
         }
 
-        let output: String
-        if let outPipe = outPipe {
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            output = String(data: data, encoding: .utf8) ?? ""
-        } else {
-            output = ""
-        }
-
+        let output = readPipeData(outPipe)
         let exitCode = process.terminationStatus
         if exitCode != 0 {
-            let errOutput: String
-            if let errPipe = errPipe {
-                let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-                errOutput = String(data: data, encoding: .utf8) ?? ""
-            } else {
-                errOutput = ""
-            }
-            let msg = errOutput.isEmpty ? "exit code \(exitCode)" : errOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let errOutput = readPipeData(errPipe)
+            let msg = errOutput.isEmpty
+                ? "exit code \(exitCode)"
+                : errOutput.trimmingCharacters(in: .whitespacesAndNewlines)
             return .failure(error: msg, exitCode: exitCode)
         }
 
         return .success(output: output)
     }
 
+    private func readPipeData(_ pipe: Pipe?) -> String {
+        guard let pipe else { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     private func executePipeline(_ pipeline: ParsedPipeline) -> CommandResult {
         let commands = pipeline.commands
         let count = commands.count
 
-        var pipes: [Pipe] = []
-        for _ in 0..<(count - 1) {
-            pipes.append(Pipe())
-        }
-
+        let pipes: [Pipe] = (0..<(count - 1)).map { _ in Pipe() }
         var processes: [Process] = []
-        var outputHandles: [FileHandle] = []
 
         for (index, cmd) in commands.enumerated() {
-            let isBuiltin = isBuiltinCommand(cmd.name)
-            if isBuiltin {
-                if cmd.name == "exit" { return .exit }
-                continue
-            }
-
-            guard let executable = environment.resolveExecutable(cmd.name) else {
-                for p in processes { if p.isRunning { p.terminate() } }
-                return .failure(error: "command not found: \(cmd.name)", exitCode: 127)
-            }
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = cmd.arguments
-            process.environment = environment.exportedEnvironment()
-
-            if index == 0 {
-                process.standardInput = FileHandle.standardInput
-            } else {
-                process.standardInput = pipes[index - 1].fileHandleForReading
-            }
-
-            if index < count - 1 {
-                process.standardOutput = pipes[index].fileHandleForWriting
-            }
-
-            for (pi, p) in pipes.enumerated() {
-                if pi != index - 1 {
-                    try? p.fileHandleForReading.close()
-                }
-                if pi != index {
-                    try? p.fileHandleForWriting.close()
-                }
-            }
-
-            do {
-                try process.run()
+            let result = launchPipelineProcess(
+                command: cmd, at: index, total: count,
+                pipes: pipes, environment: environment
+            )
+            switch result {
+            case .process(let process):
                 processes.append(process)
-                outputHandles.append(process.standardOutput as? FileHandle ?? FileHandle.nullDevice)
-            } catch {
-                for p in processes { if p.isRunning { p.terminate() } }
-                return .failure(error: "failed to launch \(cmd.name): \(error.localizedDescription)", exitCode: 1)
+            case .failure(let error, let code):
+                terminateAll(processes)
+                return .failure(error: error, exitCode: code)
+            case .exit:
+                return .exit
             }
         }
 
-        for p in pipes {
-            try? p.fileHandleForWriting.close()
+        closePipeWriters(pipes)
+        return collectPipelineOutput(processes: processes)
+    }
+
+    private enum LaunchResult {
+        case process(Process)
+        case exit
+        case failure(error: String, exitCode: Int32)
+    }
+
+    private func launchPipelineProcess(
+        command: ParsedCommand,
+        at index: Int,
+        total: Int,
+        pipes: [Pipe],
+        environment: ShellEnvironment
+    ) -> LaunchResult {
+        if isBuiltinCommand(command.name) {
+            return command.name == "exit" ? .exit : .process(Process())
         }
 
-        var output = ""
+        guard let executable = environment.resolveExecutable(command.name) else {
+            return .failure(error: "command not found: \(command.name)", exitCode: 127)
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = command.arguments
+        process.environment = environment.exportedEnvironment()
+
+        if index == 0 {
+            process.standardInput = FileHandle.standardInput
+        } else {
+            process.standardInput = pipes[index - 1].fileHandleForReading
+        }
+
+        if index < total - 1 {
+            process.standardOutput = pipes[index].fileHandleForWriting
+        }
+
+        closeUnusedPipeHandles(at: index, pipes: pipes)
+
+        do {
+            try process.run()
+            return .process(process)
+        } catch {
+            return .failure(
+                error: "failed to launch \(command.name): \(error.localizedDescription)",
+                exitCode: 1
+            )
+        }
+    }
+
+    private func closeUnusedPipeHandles(at index: Int, pipes: [Pipe]) {
+        for (pipeIndex, pipe) in pipes.enumerated() {
+            if pipeIndex != index - 1 {
+                try? pipe.fileHandleForReading.close()
+            }
+            if pipeIndex != index {
+                try? pipe.fileHandleForWriting.close()
+            }
+        }
+    }
+
+    private func closePipeWriters(_ pipes: [Pipe]) {
+        for pipe in pipes {
+            try? pipe.fileHandleForWriting.close()
+        }
+    }
+
+    private func terminateAll(_ processes: [Process]) {
+        for process in processes where process.isRunning {
+            process.terminate()
+        }
+    }
+
+    private func collectPipelineOutput(processes: [Process]) -> CommandResult {
         if let lastProcess = processes.last {
             let outPipe = Pipe()
             lastProcess.standardOutput = outPipe
             lastProcess.waitUntilExit()
             let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            output = String(data: data, encoding: .utf8) ?? ""
-        } else {
-            for p in processes { p.waitUntilExit() }
+            let output = String(data: data, encoding: .utf8) ?? ""
+
+            if lastProcess.terminationStatus != 0 {
+                return .failure(
+                    error: "exit code \(lastProcess.terminationStatus)",
+                    exitCode: lastProcess.terminationStatus
+                )
+            }
+            return .success(output: output)
         }
 
-        let exitCode = processes.last?.terminationStatus ?? 0
-        if exitCode != 0 {
-            return .failure(error: "exit code \(exitCode)", exitCode: exitCode)
+        for process in processes {
+            process.waitUntilExit()
         }
-        return .success(output: output)
+        return .success(output: "")
     }
 
     private func isBuiltinCommand(_ name: String) -> Bool {

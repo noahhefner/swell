@@ -21,7 +21,8 @@ struct RedirectionIntegrationTests {
         process.waitUntilExit()
         try fileHandle.close()
 
-        let content = try String(contentsOfFile: tempPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = try String(contentsOfFile: tempPath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         #expect(content == "redirected content")
     }
 
