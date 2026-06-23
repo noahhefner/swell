@@ -1,0 +1,40 @@
+disabled_rules:
+  - trailing_comma
+  - nesting
+
+opt_in_rules:
+  - force_unwrapping
+  - cyclomatic_complexity
+
+cyclomatic_complexity:
+  warning: 10
+  error: 15
+
+force_unwrapping:
+  severity: error
+
+line_length:
+  warning: 120
+  error: 200
+
+file_length:
+  warning: 500
+  error: 1000
+
+type_body_length:
+  warning: 300
+  error: 500
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    - i
+    - j
+    - id
+    - cd
+    - pwd
