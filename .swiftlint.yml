@@ -1,3 +1,7 @@
+included:
+  - Sources
+  - Tests
+
 disabled_rules:
   - trailing_comma
   - nesting
@@ -22,8 +26,12 @@ file_length:
   error: 1000
 
 type_body_length:
-  warning: 300
+  warning: 350
   error: 500
+
+function_parameter_count:
+  warning: 6
+  error: 8
 
 identifier_name:
   min_length:

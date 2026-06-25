@@ -73,7 +73,7 @@ public final class REPL: @unchecked Sendable {
         }
     }
 
-    private func execute(_ input: String) -> CommandResult {
+    func execute(_ input: String) -> CommandResult {
         do {
             let pipeline = try parser.parse(input)
 
@@ -101,9 +101,36 @@ public final class REPL: @unchecked Sendable {
 
     private func executeSingle(_ command: ParsedCommand) -> CommandResult {
         if let result = executeBuiltin(command) {
-            return result
+            return handleBuiltinRedirect(result, command: command)
         }
-        return executeExternal(command: command, stdin: nil, stdoutDest: nil, stderrDest: nil)
+
+        do {
+            let stdoutDest = try command.stdoutRedirect.map(openRedirectFile)
+            let stderrDest = try command.stderrRedirect.map(openRedirectFile)
+            return executeExternal(command: command, stdin: nil, stdoutDest: stdoutDest, stderrDest: stderrDest)
+        } catch {
+            return .failure(error: "cannot open file for writing: \(error.localizedDescription)", exitCode: 1)
+        }
+    }
+
+    private func openRedirectFile(_ target: RedirectTarget) throws -> FileHandle {
+        switch target {
+        case .overwrite(let path): return try Redirection.openForOverwrite(path)
+        case .append(let path): return try Redirection.openForAppend(path)
+        }
+    }
+
+    private func handleBuiltinRedirect(_ result: CommandResult, command: ParsedCommand) -> CommandResult {
+        guard case .success(let output) = result else { return result }
+        guard let stdoutRedirect = command.stdoutRedirect else { return result }
+        do {
+            let handle = try openRedirectFile(stdoutRedirect)
+            handle.write(Data(output.utf8))
+            try handle.close()
+            return .success(output: "")
+        } catch {
+            return .failure(error: "cannot open file for writing: \(error.localizedDescription)", exitCode: 1)
+        }
     }
 
     private func executeBuiltin(_ command: ParsedCommand) -> CommandResult? {
@@ -177,14 +204,16 @@ public final class REPL: @unchecked Sendable {
     private func executePipeline(_ pipeline: ParsedPipeline) -> CommandResult {
         let commands = pipeline.commands
         let count = commands.count
+        let lastStdoutRedirect = commands.last?.stdoutRedirect
 
         let pipes: [Pipe] = (0..<(count - 1)).map { _ in Pipe() }
+        let outPipe = Pipe()
         var processes: [Process] = []
 
         for (index, cmd) in commands.enumerated() {
             let result = launchPipelineProcess(
                 command: cmd, at: index, total: count,
-                pipes: pipes, environment: environment
+                pipes: pipes, outPipe: outPipe, environment: environment
             )
             switch result {
             case .process(let process):
@@ -197,8 +226,14 @@ public final class REPL: @unchecked Sendable {
             }
         }
 
-        closePipeWriters(pipes)
-        return collectPipelineOutput(processes: processes)
+        for pipe in pipes {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+        }
+        try? outPipe.fileHandleForWriting.close()
+
+        let hasStdout = lastStdoutRedirect != nil
+        return collectPipelineOutput(processes: processes, outPipe: outPipe, hasStdoutRedirect: hasStdout)
     }
 
     private enum LaunchResult {
@@ -212,6 +247,7 @@ public final class REPL: @unchecked Sendable {
         at index: Int,
         total: Int,
         pipes: [Pipe],
+        outPipe: Pipe,
         environment: ShellEnvironment
     ) -> LaunchResult {
         if isBuiltinCommand(command.name) {
@@ -235,9 +271,23 @@ public final class REPL: @unchecked Sendable {
 
         if index < total - 1 {
             process.standardOutput = pipes[index].fileHandleForWriting
+        } else {
+            do {
+                if let stdoutRedirect = command.stdoutRedirect {
+                    process.standardOutput = try openRedirectFile(stdoutRedirect)
+                } else {
+                    process.standardOutput = outPipe.fileHandleForWriting
+                }
+                if let stderrRedirect = command.stderrRedirect {
+                    process.standardError = try openRedirectFile(stderrRedirect)
+                }
+            } catch {
+                return .failure(
+                    error: "cannot open file for writing: \(error.localizedDescription)",
+                    exitCode: 1
+                )
+            }
         }
-
-        closeUnusedPipeHandles(at: index, pipes: pipes)
 
         do {
             try process.run()
@@ -250,36 +300,22 @@ public final class REPL: @unchecked Sendable {
         }
     }
 
-    private func closeUnusedPipeHandles(at index: Int, pipes: [Pipe]) {
-        for (pipeIndex, pipe) in pipes.enumerated() {
-            if pipeIndex != index - 1 {
-                try? pipe.fileHandleForReading.close()
-            }
-            if pipeIndex != index {
-                try? pipe.fileHandleForWriting.close()
-            }
-        }
-    }
-
-    private func closePipeWriters(_ pipes: [Pipe]) {
-        for pipe in pipes {
-            try? pipe.fileHandleForWriting.close()
-        }
-    }
-
     private func terminateAll(_ processes: [Process]) {
         for process in processes where process.isRunning {
             process.terminate()
         }
     }
 
-    private func collectPipelineOutput(processes: [Process]) -> CommandResult {
+    private func collectPipelineOutput(processes: [Process], outPipe: Pipe, hasStdoutRedirect: Bool) -> CommandResult {
         if let lastProcess = processes.last {
-            let outPipe = Pipe()
-            lastProcess.standardOutput = outPipe
             lastProcess.waitUntilExit()
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
+            let output: String
+            if hasStdoutRedirect {
+                output = ""
+            } else {
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                output = String(data: data, encoding: .utf8) ?? ""
+            }
 
             if lastProcess.terminationStatus != 0 {
                 return .failure(
