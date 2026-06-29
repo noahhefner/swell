@@ -15,6 +15,8 @@ public final class REPL: @unchecked Sendable {
     private var promptRenderer = PromptRenderer(config: PromptConfig.load())
     private var sigintReceived = false
     private var lastExitCode: Int32 = 0
+    private var history = CommandHistory()
+    private var lineEditor = LineEditor()
 
     public init() {
         applyEnvOverrides()
@@ -41,16 +43,24 @@ public final class REPL: @unchecked Sendable {
             let prompt = promptRenderer.render(env: environment, colorState: colorState)
             FileHandle.standardOutput.write(Data(prompt.utf8))
             try? FileHandle.standardOutput.synchronize()
+            lineEditor.prompt = prompt
 
-            guard let input = readLine() else {
-                print()
-                break
+            let input = lineEditor.readCommand()
+            guard !input.isEmpty else {
+                if isatty(STDIN_FILENO) == 0 { break }
+                continue
             }
 
             let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
+            let commandName = trimmed.split(separator: " ").first.map(String.init) ?? trimmed
+
             let result = execute(input)
+
+            if commandName != "history" {
+                history.add(input)
+            }
             switch result {
             case .success(let output):
                 if !output.isEmpty {
@@ -145,6 +155,9 @@ public final class REPL: @unchecked Sendable {
             return Export.execute(arguments: command.arguments, environment: &environment)
         case "echo":
             return Echo.execute(arguments: command.arguments)
+        case "history":
+            let output = History.execute(history: history.entries)
+            return .success(output: output + "\n")
         default:
             return nil
         }
@@ -333,7 +346,7 @@ public final class REPL: @unchecked Sendable {
     }
 
     private func isBuiltinCommand(_ name: String) -> Bool {
-        ["cd", "pwd", "exit", "export", "echo"].contains(name)
+        ["cd", "pwd", "exit", "export", "echo", "history"].contains(name)
     }
 
     private func useColorOutput() -> Bool {

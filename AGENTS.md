@@ -1,4 +1,4 @@
 <!-- SPECKIT START -->
-The current implementation plan can be found at:
-`specs/005-shell-command-history/plan.md`
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
 <!-- SPECKIT END -->
