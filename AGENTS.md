@@ -1,4 +1,4 @@
 <!-- SPECKIT START -->
 The current implementation plan can be found at:
-`specs/004-fix-redirect-bug/plan.md`
+`specs/005-shell-command-history/plan.md`
 <!-- SPECKIT END -->
